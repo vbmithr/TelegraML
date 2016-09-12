@@ -14,49 +14,43 @@ module ParseMode : sig
   val string_of_parse_mode : parse_mode -> string
 end
 
+(** Represents a user profile *)
 module User : sig
-  (** Represents a user profile *)
-  type user = {
+  type t = {
     id         : int;
     first_name : string;
-    last_name  : string option;
-    username   : string option
-  }
-
-  (** Create a [user] in a concise manner *)
-  val create : id:int -> first_name:string -> ?last_name:string option -> ?username:string option -> unit -> user
-  (** Read a [user] out of some JSON *)
-  val read : json -> user
+    last_name  : string;
+    username   : string;
+  } [@@deriving create, yojson]
 end
 
 (** Used to represent private messages, groupchats, and other types of Telegram chats *)
 module Chat : sig
-  (** The type of groupchat that the bot is in *)
-  type chat_type = Private | Group | Supergroup | Channel
-
-  (** Turn a string into a [chat_type] *)
-  val read_type : string -> chat_type
-
   (** Represents a chat where messages can be sent or received *)
-  type chat = {
+  type t = {
     id         : int;
-    chat_type  : chat_type;
-    title      : string option;
-    username   : string option;
-    first_name : string option;
-    last_name  : string option
-  }
+    typ        : string;
+    title      : string;
+    username   : string;
+    first_name : string;
+    last_name  : string;
+  } [@@deriving create, yojson]
+end
 
-  (** Create a [chat] in a concise manner *)
-  val create : id:int -> chat_type:chat_type -> ?title:string option -> ?username:string option -> ?first_name:string option -> ?last_name:string option -> unit -> chat
-  (** Read a [chat] out of some JSON *)
-  val read : json -> chat
+(** Used to represent formatting options for a message's text *)
+module MessageEntity : sig
+  (** Represents the message entity inside of the message *)
+  type t = {
+    typ : string;
+    offset : int;
+    length : int;
+    url: string;
+    user: User.t option;
+  } [@@deriving create, yojson]
 end
 
 (** Used for handling, loading, and sending outgoing files in messages *)
 module InputFile : sig
-  (** Loads a file (by filename) and returns the raw bytes inside of it *)
-  val load : string -> string Lwt.t
   (** Used to format data as HTTP [multipart/form-data]
       Takes:
       - A list of fields to be included in the form data as a pair of strings (name, value)
@@ -66,39 +60,7 @@ module InputFile : sig
         {li The mime type of the file}}
       - A string to be used as a boundary to split different parts of the data; ideally, this text should not be present in the raw data of the file being sent
       @return The formatted string to use as the HTTP body (make sure to correctly format the headers for multipart/form-data) *)
-  val multipart_body : (string * string) list -> string * string * string -> string -> string Lwt.t
-end
-
-(** Used to represent formatting options for a message's text *)
-module MessageEntity : sig
-  (** The type of formatting to apply to the text *)
-  type entity_type =
-    | Mention
-    | Hashtag
-    | BotCommand
-    | Url
-    | Email
-    | Bold
-    | Italic
-    | Code
-    | Pre
-    | TextLink of string
-    | TextMention of User.user
-
-  (** Takes the [url] and [user] fields of the record and the [type] field, then creates a value of type entity_type based on that *)
-  val entity_type_of_string : string option -> User.user option -> string -> entity_type
-
-  (** Represents the message entity inside of the message *)
-  type message_entity = {
-    entity_type : entity_type;
-    offset      : int;
-    length      : int
-  }
-
-  (** Create a [message_entity] in a concise manner *)
-  val create : entity_type:entity_type -> offset:int -> length:int -> unit -> message_entity
-  (** Read a [message_entity] out of some JSON *)
-  val read : Yojson.Safe.json -> message_entity
+  val multipart_body : (string * string) list -> string * Fpath.t * string -> string -> string
 end
 
 (** Used to represent an individual button on a custom keyboard *)
@@ -182,36 +144,30 @@ end
 (** This module is used for all images sent in chats *)
 module PhotoSize : sig
   (** Represents any kind of image sent in a message or used as a thumbnail, profile picture, etc. *)
-  type photo_size = {
+  type t = {
     file_id   : string;
     width     : int;
     height    : int;
-    file_size : int option
-  }
-
-  (** Create a [photo_size] in a concise manner *)
-  val create : file_id:string -> width:int -> height:int -> ?file_size:int option -> unit -> photo_size
-  (** Read a [photo_size] out of some JSON *)
-  val read : json -> photo_size
+    file_size : int; (** -1 indicate no file size **)
+  } [@@deriving create, yojson]
 
   (** This module is used to deal with outgoing photo messages *)
   module Out : sig
     (** Represents the outgoing photo message. Note that the [photo] field can either be an existing file id or the raw bytes from a file *)
-    type photo_size = {
+    type t = {
       chat_id              : int;
       photo                : string;
       caption              : string option;
       disable_notification : bool;
       reply_to_message_id  : int option;
       reply_markup         : ReplyMarkup.reply_markup option
-    }
+    } [@@deriving create, yojson]
 
-    (** Create a [photo_size] in a concise manner *)
-    val create : chat_id:int -> photo:string -> ?caption:string option -> ?disable_notification:bool -> ?reply_to:int option -> ?reply_markup:ReplyMarkup.reply_markup option -> unit -> photo_size
-    (** Prepare a [photo_size] for sending -- used in the case of a file id *)
-    val prepare : photo_size -> string
-    (** Prepare a [photo_size] for sending -- used in the case of the raw bytes *)
-    val prepare_multipart : photo_size -> string -> string Lwt.t
+    (** Prepare a [t] for sending -- used in the case of a file id *)
+    val prepare : t -> string
+
+    (** Prepare a [t] for sending -- used in the case of the raw bytes *)
+    val prepare_multipart : t -> string -> string
   end
 end
 
@@ -250,7 +206,7 @@ module Audio : sig
     (** Prepare an [audio] for sending -- used in the case of a file id *)
     val prepare : audio -> string
     (** Prepare an [audio] for sending -- used in the case of the raw bytes *)
-    val prepare_multipart : audio -> string -> string Lwt.t
+    val prepare_multipart : audio -> string -> string
  end
 end
 
@@ -258,14 +214,14 @@ module Document : sig
   (** Represents a general file sent in a message *)
   type document = {
     file_id   : string;
-    thumb     : PhotoSize.photo_size option;
+    thumb     : PhotoSize.t option;
     file_name : string option;
     mime_type : string option;
     file_size : int option
   }
 
   (** Create a [document] in a concise manner *)
-  val create : file_id:string -> ?thumb:PhotoSize.photo_size option -> ?file_name:string option -> ?mime_type:string option -> ?file_size:int option -> unit -> document
+  val create : file_id:string -> ?thumb:PhotoSize.t option -> ?file_name:string option -> ?mime_type:string option -> ?file_size:int option -> unit -> document
   (** Read a [document] out of some JSON *)
   val read : json -> document
 
@@ -285,7 +241,7 @@ module Document : sig
     (** Prepare a [document] for sending -- used in the case of a file id *)
     val prepare : document -> string
     (** Prepare a [document] for sending -- used in the case of the raw bytes *)
-    val prepare_multipart : document -> string -> string Lwt.t
+    val prepare_multipart : document -> string -> string
   end
 end
 
@@ -295,13 +251,13 @@ module Sticker : sig
     file_id   : string;
     width     : int;
     height    : int;
-    thumb     : PhotoSize.photo_size option;
+    thumb     : PhotoSize.t option;
     emoji     : string option;
     file_size : int option
   }
 
   (** Create a [sticker] in a concise manner *)
-  val create : file_id:string -> width:int -> height:int -> ?thumb:PhotoSize.photo_size option -> ?emoji:string option -> ?file_size:int option -> unit -> sticker
+  val create : file_id:string -> width:int -> height:int -> ?thumb:PhotoSize.t option -> ?emoji:string option -> ?file_size:int option -> unit -> sticker
   (** Read a [sticker] out of some JSON *)
   val read : json -> sticker
 
@@ -321,7 +277,7 @@ module Sticker : sig
     (** Prepare a [sticker] for sending -- used in the case of a file id *)
     val prepare : sticker -> string
     (** Prepare a [sticker] for sending -- used in the case of the raw bytes *)
-    val prepare_multipart : sticker -> string -> string Lwt.t
+    val prepare_multipart : sticker -> string -> string
   end
 end
 
@@ -332,13 +288,13 @@ module Video : sig
     width     : int;
     height    : int;
     duration  : int;
-    thumb     : PhotoSize.photo_size option;
+    thumb     : PhotoSize.t option;
     mime_type : string option;
     file_size : int option
   }
 
   (** Create a [video] in a concise manner *)
-  val create : file_id:string -> width:int -> height:int -> duration:int -> ?thumb:PhotoSize.photo_size option -> ?mime_type:string option -> ?file_size:int option -> unit -> video
+  val create : file_id:string -> width:int -> height:int -> duration:int -> ?thumb:PhotoSize.t option -> ?mime_type:string option -> ?file_size:int option -> unit -> video
   (** Read a [video] out of some JSON *)
   val read : json -> video
 
@@ -360,7 +316,7 @@ module Video : sig
     (** Prepare a [video] for sending -- used in the case of a file id *)
     val prepare : video -> string
     (** Prepare a [video] for sending -- used in the case of the raw bytes *)
-    val prepare_multipart : video -> string -> string Lwt.t
+    val prepare_multipart : video -> string -> string
   end
 end
 
@@ -395,7 +351,7 @@ module Voice : sig
     (** Prepare a [voice] for sending -- used in the case of a file id *)
     val prepare : voice -> string
     (** Prepare a [voice] for sending -- used in the case of the raw bytes *)
-    val prepare_multipart : voice -> string -> string Lwt.t
+    val prepare_multipart : voice -> string -> string
   end
 end
 
@@ -502,32 +458,32 @@ module UserProfilePhotos : sig
   (** Represents a user's profile pictures, each in multiple sizes *)
   type user_profile_photos = {
     total_count : int;
-    photos      : PhotoSize.photo_size list list
+    photos      : PhotoSize.t list list
   }
 
   (** Create [user_profile_photos] in a concise manner *)
-  val create : total_count:int -> photos:PhotoSize.photo_size list list -> unit -> user_profile_photos
+  val create : total_count:int -> photos:PhotoSize.t list list -> unit -> user_profile_photos
   (** Read [user_profile_photos] out of some JSON *)
   val read : Yojson.Safe.json -> user_profile_photos
 end
 
 module Message : sig
-  (** Represents a message in a chat. Note that [photo] should be a list of [PhotoSize.photo_size]s if it exists *)
+  (** Represents a message in a chat. Note that [photo] should be a list of [PhotoSize.t]s if it exists *)
   type message = {
     message_id              : int;
-    from                    : User.user option;
+    from                    : User.t option;
     date                    : int;
-    chat                    : Chat.chat;
-    forward_from            : User.user option;
-    forward_from_chat       : Chat.chat option;
+    chat                    : Chat.t;
+    forward_from            : User.t option;
+    forward_from_chat       : Chat.t option;
     forward_date            : int option;
     reply_to_message        : message option;
     edit_date               : int option;
     text                    : string option;
-    entities                : MessageEntity.message_entity list option;
+    entities                : MessageEntity.t list option;
     audio                   : Audio.audio option;
     document                : Document.document option;
-    photo                   : PhotoSize.photo_size list option;
+    photo                   : PhotoSize.t list option;
     sticker                 : Sticker.sticker option;
     video                   : Video.video option;
     voice                   : Voice.voice option;
@@ -535,10 +491,10 @@ module Message : sig
     contact                 : Contact.contact option;
     location                : Location.location option;
     venue                   : Venue.venue option;
-    new_chat_member         : User.user option;
-    left_chat_member        : User.user option;
+    new_chat_member         : User.t option;
+    left_chat_member        : User.t option;
     new_chat_title          : string option;
-    new_chat_photo          : PhotoSize.photo_size list option;
+    new_chat_photo          : PhotoSize.t list option;
     delete_chat_photo       : bool option;
     group_chat_created      : bool option;
     supergroup_chat_created : bool option;
@@ -549,7 +505,7 @@ module Message : sig
   }
 
   (** Create a [message] in a concise manner *)
-  val create : message_id:int -> ?from:User.user option -> date:int -> chat:Chat.chat -> ?forward_from:User.user option -> ?forward_from_chat:Chat.chat option -> ?forward_date:int option -> ?reply_to:message option -> ?edit_date:int option -> ?text:string option -> ?entities:MessageEntity.message_entity list option -> ?audio:Audio.audio option -> ?document:Document.document option -> ?photo:PhotoSize.photo_size list option -> ?sticker:Sticker.sticker option -> ?video:Video.video option -> ?voice:Voice.voice option -> ?caption:string option -> ?contact:Contact.contact option -> ?location:Location.location option -> ?venue:Venue.venue option -> ?new_chat_member:User.user option -> ?left_chat_member:User.user option -> ?new_chat_title:string option -> ?new_chat_photo:PhotoSize.photo_size list option -> ?delete_chat_photo:bool option -> ?group_chat_created:bool option -> ?supergroup_chat_created:bool option -> ?channel_chat_created:bool option -> ?migrate_to_chat_id:int option -> ?migrate_from_chat_id:int option -> ?pinned_message:message option -> unit -> message
+  val create : message_id:int -> ?from:User.t option -> date:int -> chat:Chat.t -> ?forward_from:User.t option -> ?forward_from_chat:Chat.t option -> ?forward_date:int option -> ?reply_to:message option -> ?edit_date:int option -> ?text:string option -> ?entities:MessageEntity.t list option -> ?audio:Audio.audio option -> ?document:Document.document option -> ?photo:PhotoSize.t list option -> ?sticker:Sticker.sticker option -> ?video:Video.video option -> ?voice:Voice.voice option -> ?caption:string option -> ?contact:Contact.contact option -> ?location:Location.location option -> ?venue:Venue.venue option -> ?new_chat_member:User.t option -> ?left_chat_member:User.t option -> ?new_chat_title:string option -> ?new_chat_photo:PhotoSize.t list option -> ?delete_chat_photo:bool option -> ?group_chat_created:bool option -> ?supergroup_chat_created:bool option -> ?channel_chat_created:bool option -> ?migrate_to_chat_id:int option -> ?migrate_from_chat_id:int option -> ?pinned_message:message option -> unit -> message
   (** Read a [message] out of some JSON *)
   val read : json -> message
 
@@ -576,7 +532,7 @@ module File : sig
   val read : Yojson.Safe.json -> file
 
   (** Download the file from Telegram's servers if it exists *)
-  val download : string -> file -> string Lwt.t option
+  val download : string -> file -> string option
 end
 
 (** This module is used for dealing with the results returned by clicking on callback buttons on inline keyboards *)
@@ -584,14 +540,14 @@ module CallbackQuery : sig
   (** Represents the reply from the callback query *)
   type callback_query = {
     id                : string;
-    from              : User.user;
+    from              : User.t;
     message           : Message.message option;
     inline_message_id : string option;
     data              : string
   }
 
   (** Create a [callback_query] in a concise manner *)
-  val create : id:string -> from:User.user -> ?message:Message.message option -> ?inline_message_id:string option -> data:string -> unit -> callback_query
+  val create : id:string -> from:User.t -> ?message:Message.message option -> ?inline_message_id:string option -> data:string -> unit -> callback_query
   (** Read a [callback_query] out of some JSON *)
   val read : Yojson.Safe.json -> callback_query
 end
@@ -606,12 +562,12 @@ module ChatMember : sig
 
   (** Represents the chat member object (the user itself and their status) *)
   type chat_member = {
-    user : User.user;
+    user : User.t;
     status : status
   }
 
   (** Create a [chat_member] in a concise manner *)
-  val create : user:User.user -> status:status -> unit -> chat_member
+  val create : user:User.t -> status:status -> unit -> chat_member
   (** Read a [chat_member] out of some JSON *)
   val read : Yojson.Safe.json -> chat_member
 end
@@ -669,20 +625,20 @@ module InlineQuery : sig
   (** Represents incoming messages for an InlineQuery bot *)
   type inline_query = {
     id     : string;
-    from   : User.user;
+    from   : User.t;
     query  : string;
     offset : string
   }
 
   (** Create an [inline_query] in a concise manner *)
-  val create : id:string -> from:User.user -> query:string -> offset:string -> unit -> inline_query
+  val create : id:string -> from:User.t -> query:string -> offset:string -> unit -> inline_query
   (** Read an [inline_query] out of some JSON *)
   val read : Yojson.Safe.json -> inline_query
 
   (** Represents the reply to an InlineQuery bot if one is requested *)
   type chosen_inline_result = {
     result_id : string;
-    from      : User.user;
+    from      : User.t;
     query     : string
   }
 
@@ -1018,7 +974,7 @@ module Command : sig
   (** The actions that can be used by the bot's commands *)
   type action =
     | Nothing
-    | GetMe of (User.user Result.result -> action)
+    | GetMe of (User.t Result.result -> action)
     | SendMessage of int * string * bool * int option * ReplyMarkup.reply_markup option
     | ForwardMessage of int * int * bool * int
     | SendChatAction of int * ChatAction.action
@@ -1044,7 +1000,7 @@ module Command : sig
     | KickChatMember of int * int
     | LeaveChat of int
     | UnbanChatMember of int * int
-    | GetChat of int * (Chat.chat Result.result -> action)
+    | GetChat of int * (Chat.t Result.result -> action)
     | GetChatAdministrators of int * (ChatMember.chat_member list Result.result -> action)
     | GetChatMembersCount of int * (int Result.result -> action)
     | GetChatMember of int * int * (ChatMember.chat_member Result.result -> action)
@@ -1101,41 +1057,43 @@ module type BOT = sig
   val callback : CallbackQuery.callback_query -> Command.action
 
   (** Called whenever a new user is added to or joins a chat *)
-  val new_chat_member : Chat.chat -> User.user -> Command.action
+  val new_chat_member : Chat.t -> User.t -> Command.action
 
   (** Called whenever a user leaves a chat *)
-  val left_chat_member : Chat.chat -> User.user -> Command.action
+  val left_chat_member : Chat.t -> User.t -> Command.action
 
   (** Called when the title for a chat is changed *)
-  val new_chat_title : Chat.chat -> string -> Command.action
+  val new_chat_title : Chat.t -> string -> Command.action
 
   (** Called whenever a new chat photo is set or the current one is changed *)
-  val new_chat_photo : Chat.chat -> PhotoSize.photo_size list -> Command.action
+  val new_chat_photo : Chat.t -> PhotoSize.t list -> Command.action
 
   (** Called whenever a chat's photo gets deleted *)
-  val delete_chat_photo : Chat.chat -> Command.action
+  val delete_chat_photo : Chat.t -> Command.action
 
   (** Called whenever a chat turns into a group chat *)
-  val group_chat_created : Chat.chat -> Command.action
+  val group_chat_created : Chat.t -> Command.action
 
   (** Called whenever a chat turns into a supergroup chat *)
-  val supergroup_chat_created : Chat.chat -> Command.action
+  val supergroup_chat_created : Chat.t -> Command.action
 
   (** Called whenever a chat turns into a channel *)
-  val channel_chat_created : Chat.chat -> Command.action
+  val channel_chat_created : Chat.t -> Command.action
 
   (** Called whenever a chat migrates to a new chat id *)
-  val migrate_to_chat_id : Chat.chat -> int -> Command.action
+  val migrate_to_chat_id : Chat.t -> int -> Command.action
 
   (** Called whenever a chat has been migrated from another chat id *)
-  val migrate_from_chat_id : Chat.chat -> int -> Command.action
+  val migrate_from_chat_id : Chat.t -> int -> Command.action
 
   (** Called whenever a certain message is pinned for a chat *)
-  val pinned_message : Chat.chat -> Message.message -> Command.action
+  val pinned_message : Chat.t -> Message.message -> Command.action
 end
 
 (** TELEGRAM_BOT represents the interface to a running bot *)
 module type TELEGRAM_BOT = sig
+  module IO : Cohttp.S.IO
+
   (** The base url for all connections to the API *)
   val url : string
 
@@ -1149,118 +1107,118 @@ module type TELEGRAM_BOT = sig
   val callback : CallbackQuery.callback_query -> Command.action
 
   (** Get the user information for the bot; use to test connection to the Telegram server *)
-  val get_me : User.user Result.result Lwt.t
+  val get_me : User.t Result.result IO.t
 
   (** Send a text message to a specified chat *)
-  val send_message : chat_id:int -> text:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val send_message : chat_id:int -> text:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Forwards any message from one chat to another (can be same chat) *)
-  val forward_message : chat_id:int -> from_chat_id:int -> ?disable_notification:bool -> message_id:int -> unit Result.result Lwt.t
+  val forward_message : chat_id:int -> from_chat_id:int -> ?disable_notification:bool -> message_id:int -> unit Result.result IO.t
 
   (** Send an action report to the chat, to show that a command will take some time *)
-  val send_chat_action : chat_id:int -> action:ChatAction.action -> unit Result.result Lwt.t
+  val send_chat_action : chat_id:int -> action:ChatAction.action -> unit Result.result IO.t
 
   (** Send a new image file (jpeg/png) to a specified chat. Note that [photo] refers to the file's name to send. *)
-  val send_photo : chat_id:int -> photo:string -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result Lwt.t
+  val send_photo : chat_id:int -> photo:string -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result IO.t
 
   (** Send an existing image file (jpeg/png) to a specified chat. Note that [photo] refers to the file's id on the Telegram servers. *)
-  val resend_photo : chat_id:int -> photo:string -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val resend_photo : chat_id:int -> photo:string -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
  (** Send a new audio file (mp3) to a specified chat. Note that [audio] refers to the file's name to send. *)
-  val send_audio : chat_id:int -> audio:string -> performer:string -> title:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result Lwt.t
+  val send_audio : chat_id:int -> audio:string -> performer:string -> title:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result IO.t
 
   (** Send an existing audio file (mp3) to a specified chat. Note that [audio] refers to the file's id on the Telegram servers. *)
-  val resend_audio : chat_id:int -> audio:string -> performer:string -> title:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val resend_audio : chat_id:int -> audio:string -> performer:string -> title:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Send a new document file to a specified chat. Note that [document] refers to the file's name to send. *)
-  val send_document : chat_id:int -> document:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result Lwt.t
+  val send_document : chat_id:int -> document:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result IO.t
 
   (** Send an existing document file to a specified chat. Note that [document] refers to the file's id on the Telegram servers. *)
-  val resend_document : chat_id:int -> document:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val resend_document : chat_id:int -> document:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Send a new sticker file (webp) to a specified chat. Note that [sticker] refers to the file's name to send. *)
-  val send_sticker : chat_id:int -> sticker:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result Lwt.t
+  val send_sticker : chat_id:int -> sticker:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result IO.t
 
   (** Send an existing sticker file (webp) to a specified chat. Note that [sticker] refers to the file's id on the Telegram servers. *)
-  val resend_sticker : chat_id:int -> sticker:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val resend_sticker : chat_id:int -> sticker:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Send a new video file (mp4/mov/webm) to a specified chat. Note that [video] refers to the file's name to send. *)
-  val send_video : chat_id:int -> video:string -> ?duration:int option -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result Lwt.t
+  val send_video : chat_id:int -> video:string -> ?duration:int option -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result IO.t
 
   (** Send an existing video (mp4/mov/webm) file to a specified chat. Note that [video] refers to the file's id on the Telegram servers. *)
-  val resend_video : chat_id:int -> video:string -> ?duration:int option -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val resend_video : chat_id:int -> video:string -> ?duration:int option -> ?caption:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Send a new voice message (ogg) to a specified chat. Note that [voice] refers to the file's name to send. *)
-  val send_voice : chat_id:int -> voice:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result Lwt.t
+  val send_voice : chat_id:int -> voice:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> string Result.result IO.t
 
   (** Send an existing voice message (ogg) to a specified chat. Note that [voice] refers to the file's id on the Telegram servers. *)
-  val resend_voice : chat_id:int -> voice:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val resend_voice : chat_id:int -> voice:string -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Send a location to a specified chat *)
-  val send_location : chat_id:int -> latitude:float -> longitude:float -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val send_location : chat_id:int -> latitude:float -> longitude:float -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Send a venue to a specified chat *)
-  val send_venue : chat_id:int -> latitude:float -> longitude:float -> title:string -> address:string -> foursquare_id:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val send_venue : chat_id:int -> latitude:float -> longitude:float -> title:string -> address:string -> foursquare_id:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Send a contact to a specified chat *)
-  val send_contact : chat_id:int -> phone_number:string -> first_name:string -> last_name:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result Lwt.t
+  val send_contact : chat_id:int -> phone_number:string -> first_name:string -> last_name:string option -> ?disable_notification:bool -> reply_to:int option -> reply_markup:ReplyMarkup.reply_markup option -> unit Result.result IO.t
 
   (** Get a given user's profile pictures *)
-  val get_user_profile_photos : user_id:int -> offset:int option -> limit:int option -> UserProfilePhotos.user_profile_photos Result.result Lwt.t
+  val get_user_profile_photos : user_id:int -> offset:int option -> limit:int option -> UserProfilePhotos.user_profile_photos Result.result IO.t
 
   (** Get the information for a file that's been uploaded to Telegram's servers by the [file_id] *)
-  val get_file : file_id:string -> File.file Result.result Lwt.t
+  val get_file : file_id:string -> File.file Result.result IO.t
 
   (** Download a file that's been uploaded to Telegram's servers by the [file_id] *)
-  val get_file' : file_id:string -> string option Lwt.t
+  val get_file' : file_id:string -> string option IO.t
 
   (** Download a file that's been uploaded to Telegram's servers by the [file] *)
-  val download_file : file:File.file -> string option Lwt.t
+  val download_file : file:File.file -> string option IO.t
 
   (** Kick/ban a given user from the given chat *)
-  val kick_chat_member : chat_id:int -> user_id:int -> unit Result.result Lwt.t
+  val kick_chat_member : chat_id:int -> user_id:int -> unit Result.result IO.t
 
   (** Leave a chat manually to stop receiving messages from it *)
-  val leave_chat : chat_id:int -> unit Result.result Lwt.t
+  val leave_chat : chat_id:int -> unit Result.result IO.t
 
   (** Unban a given user from the given chat *)
-  val unban_chat_member : chat_id:int -> user_id:int -> unit Result.result Lwt.t
+  val unban_chat_member : chat_id:int -> user_id:int -> unit Result.result IO.t
 
   (** Get the info for a given chat *)
-  val get_chat : chat_id:int -> Chat.chat Result.result Lwt.t
+  val get_chat : chat_id:int -> Chat.t Result.result IO.t
 
   (** Get the list of admins for a given chat *)
-  val get_chat_administrators : chat_id:int -> ChatMember.chat_member list Result.result Lwt.t
+  val get_chat_administrators : chat_id:int -> ChatMember.chat_member list Result.result IO.t
 
   (** Get the number of members in a given chat *)
-  val get_chat_members_count : chat_id:int -> int Result.result Lwt.t
+  val get_chat_members_count : chat_id:int -> int Result.result IO.t
 
   (** Get information about a certain member in the given chat *)
-  val get_chat_member : chat_id:int -> user_id:int -> ChatMember.chat_member Result.result Lwt.t
+  val get_chat_member : chat_id:int -> user_id:int -> ChatMember.chat_member Result.result IO.t
 
   (** Answer a callback query sent from an inline keyboard *)
-  val answer_callback_query : callback_query_id:string -> ?text:string option -> ?show_alert:bool -> unit -> unit Result.result Lwt.t
+  val answer_callback_query : callback_query_id:string -> ?text:string option -> ?show_alert:bool -> unit -> unit Result.result IO.t
 
   (** Answers between 1 to 50 inline queries *)
-  val answer_inline_query : inline_query_id:string -> results:InlineQuery.Out.inline_query_result list -> ?cache_time:int option -> ?is_personal:bool option -> ?next_offset:string option -> unit -> unit Result.result Lwt.t
+  val answer_inline_query : inline_query_id:string -> results:InlineQuery.Out.inline_query_result list -> ?cache_time:int option -> ?is_personal:bool option -> ?next_offset:string option -> unit -> unit Result.result IO.t
 
   (** Edit an existing message, selected by either the chat id, the message id, or the inline message id *)
-  val edit_message_text : ?chat_id:string option -> ?message_id:int option -> ?inline_message_id:string option -> text:string -> parse_mode:ParseMode.parse_mode option -> disable_web_page_preview:bool -> reply_markup:ReplyMarkup.reply_markup option -> unit -> unit Result.result Lwt.t
+  val edit_message_text : ?chat_id:string option -> ?message_id:int option -> ?inline_message_id:string option -> text:string -> parse_mode:ParseMode.parse_mode option -> disable_web_page_preview:bool -> reply_markup:ReplyMarkup.reply_markup option -> unit -> unit Result.result IO.t
 
   (** Edit the caption of an existing message, selected by either the chat id, the message id, or the inline message id *)
-  val edit_message_caption : ?chat_id:string option -> ?message_id:int option -> ?inline_message_id:string option -> caption:string -> reply_markup:ReplyMarkup.reply_markup option -> unit -> unit Result.result Lwt.t
+  val edit_message_caption : ?chat_id:string option -> ?message_id:int option -> ?inline_message_id:string option -> caption:string -> reply_markup:ReplyMarkup.reply_markup option -> unit -> unit Result.result IO.t
 
   (** Edit the reply markup of an existing message, selected by either the chat id, the message id, or the inline message id. Use [None] to remove the reply markup *)
-  val edit_message_reply_markup : ?chat_id:string option -> ?message_id:int option -> ?inline_message_id:string option -> reply_markup:ReplyMarkup.reply_markup option -> unit -> unit Result.result Lwt.t
+  val edit_message_reply_markup : ?chat_id:string option -> ?message_id:int option -> ?inline_message_id:string option -> reply_markup:ReplyMarkup.reply_markup option -> unit -> unit Result.result IO.t
 
   (** Get a list of all available updates that the bot has received *)
-  val get_updates : Update.update list Result.result Lwt.t
+  val get_updates : Update.update list Result.result IO.t
 
   (** Get the first available update from the update queue *)
-  val peek_update : Update.update Result.result Lwt.t
+  val peek_update : Update.update Result.result IO.t
 
   (** Get the first available update from the update queue and mark it as read (deletes the update) *)
-  val pop_update : ?run_cmds:bool -> unit -> Update.update Result.result Lwt.t
+  val pop_update : ?run_cmds:bool -> unit -> Update.update Result.result IO.t
 
   (** Run the bot with a default main loop, optionally logging the output to stdout *)
   val run : ?log:bool -> unit -> unit

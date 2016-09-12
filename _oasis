@@ -1,7 +1,7 @@
 Name: telegraml
 Version: 2.1.4
 OCamlVersion: >= 4.02
-Synopsis: Telegram Bot API for OCaml 
+Synopsis: Telegram Bot API for OCaml
 Authors: nv-vn <nv@cock.li>
 License: MIT
 
@@ -12,7 +12,7 @@ Plugins: META (0.4), DevFiles (0.4)
 Library "telegraml"
   Path: src/
   Modules: Telegram, TelegramApi, TelegramUtil, TelegramActions
-  BuildDepends: lwt, cohttp, cohttp.lwt, yojson, batteries
+  BuildDepends: bos, ppx_deriving.std, ppx_deriving_yojson, async, cohttp.async, yojson, threads
   Install: true
 
 Document "telegram_api"

@@ -1,4 +1,4 @@
 S src/
 B _build/src/
 
-PKG batteries cohttp lwt cohttp.lwt yojson
+PKG async cohttp.async yojson bos ppx_deriving.std ppx_deriving_yojson

@@ -1,3 +1,6 @@
+open Astring
+open Rresult
+open Bos.OS
 open TelegramUtil
 open Yojson.Safe
 
@@ -12,130 +15,53 @@ module ParseMode = struct
 end
 
 module User = struct
-  type user = {
+  type t = {
     id         : int;
     first_name : string;
-    last_name  : string option;
-    username   : string option
-  }
-
-  let create ~id ~first_name ?(last_name=None) ?(username=None) () =
-    {id; first_name; last_name; username}
-
-  let read obj =
-    let id = the_int @@ get_field "id" obj in
-    let first_name = the_string @@ get_field "first_name" obj in
-    let last_name = the_string <$> get_opt_field "last_name" obj in
-    let username = the_string <$> get_opt_field "last_name" obj in
-    create ~id ~first_name ~last_name ~username ()
+    last_name  : string [@default ""];
+    username   : string [@default ""];
+  } [@@deriving create, yojson]
 end
 
 module Chat = struct
-  type chat_type = Private | Group | Supergroup | Channel
-
-  let read_type = function
-    | "private" -> Private
-    | "group" -> Group
-    | "supergroup" -> Supergroup
-    | "channel" -> Channel
-    | _ -> raise (ApiException "Unknown chat type!")
-
-  type chat = {
+  type t = {
     id         : int;
-    chat_type  : chat_type;
-    title      : string option;
-    username   : string option;
-    first_name : string option;
-    last_name  : string option
-  }
-
-  let create ~id ~chat_type ?(title=None) ?(username=None) ?(first_name=None) ?(last_name=None) () =
-    {id; chat_type; title; username; first_name; last_name}
-
-  let read obj =
-    let id = the_int @@ get_field "id" obj in
-    let chat_type = read_type @@ the_string @@ get_field "type" obj in
-    let title = the_string <$> get_opt_field "title" obj in
-    let username = the_string <$> get_opt_field "username" obj in
-    let first_name = the_string <$> get_opt_field "first_name" obj in
-    let last_name = the_string <$> get_opt_field "last_name" obj in
-    create ~id ~chat_type ~title ~username ~first_name ~last_name ()
+    typ : string [@key "type"];
+    title      : string [@default ""];
+    username   : string [@default ""];
+    first_name : string [@default ""];
+    last_name  : string [@default ""];
+  } [@@deriving create, yojson]
 end
 
 module MessageEntity = struct
-  type entity_type =
-    | Mention
-    | Hashtag
-    | BotCommand
-    | Url
-    | Email
-    | Bold
-    | Italic
-    | Code
-    | Pre
-    | TextLink of string
-    | TextMention of User.user
-
-  let entity_type_of_string url user = function
-    | "mention" -> Mention
-    | "hashtag" -> Hashtag
-    | "bot_command" -> BotCommand
-    | "url" -> Url
-    | "email" -> Email
-    | "bold" -> Bold
-    | "italic" -> Italic
-    | "code" -> Code
-    | "pre" -> Pre
-    | "text_link" -> begin match url with
-        | Some url -> TextLink url
-        | None -> raise @@ ApiException "MessageEntity of type 'text_link' missing url"
-      end
-    | "text_mention" -> begin match user with
-        | Some user -> TextMention user
-        | None -> raise @@ ApiException "MessageEntity of type 'text_mention' missing user"
-      end
-    | _ -> raise @@ ApiException "Unrecognized type of MessageEntity encountered"
-
-  type message_entity = {
-    entity_type : entity_type;
-    offset      : int;
-    length      : int
-  }
-
-  let create ~entity_type ~offset ~length () =
-    {entity_type; offset; length}
-
-  let read obj =
-    let url = the_string <$> get_opt_field "url" obj
-    and user = User.read <$> get_opt_field "user" obj in
-    let entity_type = entity_type_of_string url user @@ the_string @@ get_field "type" obj in
-    let offset = the_int @@ get_field "offset" obj in
-    let length = the_int @@ get_field "length" obj in
-    create ~entity_type ~offset ~length ()
+  type t = {
+    typ : string [@key "type"];
+    offset : int;
+    length : int;
+    url: string [@default ""];
+    user: User.t option [@default None];
+  } [@@deriving create, yojson]
 end
 
 module InputFile = struct
-  open Lwt
 
-  let load (file:string) =
-    let open Lwt_io in
-    with_file ~mode:input file read
-
-  let multipart_body fields (name, file, mime) boundary' =
+  let multipart_body fields (name, fpath, mime) boundary' =
     let boundary = "--" ^ boundary' in
-    let ending = boundary ^ "--"
-    and break = "\r\n" in
-    load file >>= fun file_bytes ->
-    let field_bodies = List.map (fun (name, value) ->
+    let ending = boundary ^ "--" in
+    let break = "\r\n" in
+    R.map begin fun file_bytes ->
+      let field_bodies = List.map (fun (name, value) ->
+          boundary ^ break
+          ^ "Content-Disposition: form-data; name=\"" ^ name ^ "\"" ^ break ^ break
+          ^ value ^ break) fields |> fun strs -> List.fold_right (^) strs "" in
+      let file_body =
         boundary ^ break
-        ^ "Content-Disposition: form-data; name=\"" ^ name ^ "\"" ^ break ^ break
-        ^ value ^ break) fields |> fun strs -> List.fold_right (^) strs "" in
-    let file_body =
-      boundary ^ break
-      ^ "Content-Disposition: form-data; name=\"" ^ name ^ "\"; filename=\"" ^ file ^ "\"" ^ break
-      ^ "Content-Type: " ^ mime ^ break ^ break
-      ^ file_bytes ^ break in
-    return @@ field_bodies ^ file_body ^ ending
+        ^ "Content-Disposition: form-data; name=\"" ^ name ^ "\"; filename=\"" ^ Fpath.to_string fpath ^ "\"" ^ break
+        ^ "Content-Type: " ^ mime ^ break ^ break
+        ^ file_bytes ^ break in
+      field_bodies ^ file_body ^ ending
+    end @@ File.read fpath
 end
 
 module KeyboardButton = struct
@@ -224,56 +150,42 @@ module ReplyMarkup = struct
 end
 
 module PhotoSize = struct
-  type photo_size = {
+  type t = {
     file_id   : string;
     width     : int;
     height    : int;
-    file_size : int option
-  }
-
-  let create ~file_id ~width ~height ?(file_size = None) () =
-    {file_id; width; height; file_size}
-
-  let read obj =
-    let file_id = the_string @@ get_field "file_id" obj in
-    let width = the_int @@ get_field "width" obj in
-    let height = the_int @@ get_field "height" obj in
-    let file_size = the_int <$> get_opt_field "file_size" obj in
-    create ~file_id ~width ~height ~file_size ()
+    file_size : int [@default -1];
+  } [@@deriving create, yojson]
 
   module Out = struct
-    type photo_size = {
+    type t = {
       chat_id              : int;
       photo                : string;
       caption              : string option;
       disable_notification : bool;
       reply_to_message_id  : int option;
       reply_markup         : ReplyMarkup.reply_markup option
-    }
+    } [@@deriving create]
 
-    let create ~chat_id ~photo ?(caption=None) ?(disable_notification=false) ?(reply_to=None) ?(reply_markup=None) () =
-      {chat_id; photo; caption; disable_notification; reply_to_message_id = reply_to; reply_markup}
-
-    let prepare = function
-    | {chat_id; photo; caption; disable_notification; reply_to_message_id; reply_markup} ->
+    let prepare { chat_id; photo; caption; disable_notification; reply_to_message_id; reply_markup } =
       let json = `Assoc ([("chat_id", `Int chat_id);
                           ("photo", `String photo);
                           ("disable_notification", `Bool disable_notification)] +? ("caption", this_string <$> caption)
                                                                                 +? ("reply_to_message_id", this_int <$> reply_to_message_id)
-                                                                                +? ("reply_markup", ReplyMarkup.prepare <$> reply_markup))in
+                                                                                +? ("reply_markup", ReplyMarkup.prepare <$> reply_markup))
+      in
       Yojson.Safe.to_string json
 
-    let prepare_multipart = function
-      | {chat_id; photo; caption; disable_notification; reply_to_message_id; reply_markup} ->
+    let prepare_multipart { chat_id; photo; caption; disable_notification; reply_to_message_id; reply_markup } =
         let fields = ([("chat_id", string_of_int chat_id);
                        ("disable_notification", string_of_bool disable_notification)] +? ("caption", caption)
                                                                                       +? ("reply_to_message_id", string_of_int <$> reply_to_message_id)
                                                                                       +? ("reply_markup", Yojson.Safe.to_string <$> (ReplyMarkup.prepare <$> reply_markup))) in
-        let open Batteries.String in
         let mime =
-          if ends_with photo ".jpg" || ends_with photo ".jpeg" then "image/jpeg" else
-          if ends_with photo ".png" then "image/png" else
-          if ends_with photo ".gif" then "image/gif" else "text/plain" in
+          if String.(is_suffix photo ".jpg" || is_suffix photo ".jpeg") then "image/jpeg" else
+          if String.is_suffix photo ".png" then "image/png" else
+          if String.is_suffix photo ".gif" then "image/gif" else "text/plain"
+        in
         InputFile.multipart_body fields ("photo", photo, mime)
   end
 end
