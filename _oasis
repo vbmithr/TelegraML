@@ -12,8 +12,15 @@ Plugins: META (0.4), DevFiles (0.4)
 Library "telegraml"
   Path: src/
   Modules: Telegram, TelegramApi, TelegramUtil, TelegramActions
-  BuildDepends: bos, ppx_deriving.std, ppx_deriving_yojson, async, cohttp.async, yojson, threads
+  BuildDepends: bos, ppx_deriving.std, ppx_deriving_yojson, magic-mime
   Install: true
+
+Library "lwt"
+  Path: src/
+  Modules: TelegramApiLwt
+  FindlibParent: telegraml
+  BuildDepends: telegraml, cohttp.lwt
+  Install: false
 
 Document "telegram_api"
   Type: ocamlbuild (0.4)

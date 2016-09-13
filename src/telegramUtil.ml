@@ -2,18 +2,6 @@ open Yojson.Safe
 
 exception ApiException of string
 
-let rec get_field target = function
-  | `Assoc [] -> raise (ApiException "Could not read JSON field!")
-  | `Assoc (x::xs) when fst x = target -> snd x
-  | `Assoc (x::xs) -> get_field target (`Assoc xs)
-  | _ -> raise (ApiException "Invalid field access!")
-
-let rec get_opt_field target = function
-  | `Assoc [] -> None
-  | `Assoc (x::xs) when fst x = target -> Some (snd x)
-  | `Assoc (x::xs) -> get_opt_field target (`Assoc xs)
-  | _ -> raise (ApiException "Invalid field access!")
-
 let (>>=) x f = match x with
   | Some x -> f x
   | None -> None
@@ -61,25 +49,3 @@ let this_assoc x = `Assoc x
 let (+?) xs = function
   | (_, None) -> xs
   | (name, Some y) -> xs @ [name, y]
-
-module Result = struct
-  type 'a result = Success of 'a | Failure of string
-
-  let return x = Success x
-
-  let default x = function
-    | Success x -> x
-    | Failure _ -> x
-
-  let (>>=) x f = match x with
-    | Success x -> f x
-    | Failure err -> Failure err
-
-  let (<$>) f = function
-    | Success x -> Success (f x)
-    | Failure err -> Failure err
-end
-
-let hd_ = function
-  | [] -> Result.Failure "Could not get head"
-  | x::_ -> Result.Success x

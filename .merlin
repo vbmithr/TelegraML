@@ -1,4 +1,4 @@
 S src/
 B _build/src/
 
-PKG async cohttp.async yojson bos ppx_deriving.std ppx_deriving_yojson
+PKG cohttp.lwt cohttp.async yojson bos ppx_deriving.std ppx_deriving_yojson lwt.ppx magic-mime
